@@ -1,0 +1,27 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    // Helper function to check if user is an Institution
+    function isInstitution() {
+      return request.auth != null && firestore.get(/databases/(default)/documents/Users/$(request.auth.uid)).data.role == 'Institution';
+    }
+
+    // Match all files in the updates folder (where multer used to save files)
+    match /certificates/{fileName} {
+      // Anyone authenticated can read/view the certificate images
+      allow read: if request.auth != null;
+
+      // Only Institutions can upload new certificate images
+      // Must be an image <= 5MB
+      allow write: if isInstitution() 
+                   && request.resource.size < 5 * 1024 * 1024 
+                   && request.resource.contentType.matches('image/.*');
+    }
+    
+    // Fallback block for everything else
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

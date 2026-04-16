@@ -1,0 +1,46 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper functions to get the user's role from the Users collection
+    function getUserRole() {
+      // This reads the User document matching the authenticated UID
+      return get(/databases/$(database)/documents/Users/$(request.auth.uid)).data.role;
+    }
+
+    function isAdmin() {
+      return request.auth != null && getUserRole() == 'Admin';
+    }
+
+    function isInstitution() {
+      return request.auth != null && getUserRole() == 'Institution';
+    }
+
+    // --- USERS COLLECTION ---
+    match /Users/{userId} {
+      // Admins can read/write anyone. Users can read/write their own profile.
+      allow read, write: if request.auth != null && (request.auth.uid == userId || isAdmin());
+    }
+
+    // --- CERTIFICATES COLLECTION ---
+    match /Certificates/{document=**} {
+      // Anyone can read a certificate if it is Accepted, OR if the reader is an Admin/Institution
+      allow read: if resource.data.status == 'Accepted' || isAdmin() || isInstitution();
+
+      // Only Institutions can upload new certificates
+      allow create: if isInstitution();
+
+      // Only Admins can update existing certificates (e.g., changing status from Pending to Accepted)
+      allow update, delete: if isAdmin();
+    }
+
+    // --- SCAN HISTORIES COLLECTION ---
+    match /ScanHistory/{historyId} {
+      // Users can only view and create their OWN scan histories. Admins can view all.
+      allow read: if request.auth != null && (request.auth.uid == resource.data.uid || isAdmin());
+      allow create: if request.auth != null && request.auth.uid == request.resource.data.uid;
+      // Scans usually shouldn't be edited or deleted once made, but if needed, allow Admin
+      allow update, delete: if isAdmin();
+    }
+  }
+}
